@@ -1,3 +1,4 @@
+# Reference Client implementation for the PasteBeam Protocol
 import hashlib;
 from random import randint, randbytes
 from base64 import b64encode
