@@ -1,5 +1,5 @@
 -module(pastebeam).
--export([start/0, accepter/1, session/2]).
+-export([start/1, accepter/1, session/2]).
 
 %% TODO: use prefix challenge instead of suffix
 %% TODO: protocol versioning
@@ -7,9 +7,10 @@
 %% TODO: flexible challenge
 %% TODO: limit the allowed charset in the submitted documents
 
--spec start() -> pid().
-start() ->
-    {ok, LSock} = gen_tcp:listen(6969, [binary, {packet, line}, {active, false}, {reuseaddr, true}]),
+-spec start(Port) -> pid() when
+      Port :: inet:port_number().
+start(Port) ->
+    {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, false}, {reuseaddr, true}]),
     spawn(?MODULE, accepter, [LSock]).
 
 fail_session(Sock, Reason) ->
