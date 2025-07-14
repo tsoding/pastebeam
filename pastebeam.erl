@@ -5,6 +5,7 @@
 %% TODO: protocol versioning
 %% TODO: limit the size of the uploaded file
 %% TODO: flexible challenge
+%% TODO: limit the allowed charset in the submitted documents
 
 start() ->
     {ok, LSock} = gen_tcp:listen(6969, [binary, {packet, line}, {active, false}, {reuseaddr, true}]),
