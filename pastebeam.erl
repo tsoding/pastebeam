@@ -7,6 +7,7 @@
 %% TODO: flexible challenge
 %% TODO: limit the allowed charset in the submitted documents
 
+-spec start() -> pid().
 start() ->
     {ok, LSock} = gen_tcp:listen(6969, [binary, {packet, line}, {active, false}, {reuseaddr, true}]),
     spawn(?MODULE, accepter, [LSock]).
@@ -81,6 +82,8 @@ session({get, Id}, Sock) ->
     gen_tcp:close(Sock),
     ok.
 
+-spec accepter(LSock) -> no_return() when
+      LSock :: gen_tcp:socket().
 accepter(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
     spawn(?MODULE, session, [command, Sock]),
