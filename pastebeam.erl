@@ -6,6 +6,7 @@
 %% TODO: limit the size of the uploaded file
 %% TODO: flexible challenge
 %% TODO: limit the allowed charset in the submitted documents
+%% TODO: challenge timeout
 
 -spec start(Port) -> pid() when
       Port :: inet:port_number().
