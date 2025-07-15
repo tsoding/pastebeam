@@ -139,11 +139,19 @@ session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
                     Id = random_valid_post_id(),
                     io:format("~w: assigned post id: ~ts\n", [Addr, Id]),
                     PostPath = io_lib:format("~ts/~ts", [Posts, Id]),
-                    %% TODO: fail if the file already exists
-                    ok = file:write_file(PostPath, Content),
-                    gen_tcp:send(Sock, [<<"SENT ">>, Id, <<"\r\n">>]),
-                    gen_tcp:close(Sock),
-                    ok;
+                    %% TODO: try to regenerate the Id several times until you find the one that is not taken
+                    case filelib:is_regular(PostPath) of
+                        false ->
+                            ok = file:write_file(PostPath, Content),
+                            gen_tcp:send(Sock, [<<"SENT ">>, Id, <<"\r\n">>]),
+                            gen_tcp:close(Sock),
+                            ok;
+                        true ->
+                            %% Very unlikely to happen, but still
+                            gen_tcp:send(Sock, [<<"500\r\n">>]),
+                            gen_tcp:close(Sock),
+                            ok
+                    end;
                 _Hash ->
                     io:format("~w: ERROR: failed the challenge with hash: ~ts\n", [Addr, Hash]),
                     gen_tcp:send(Sock, <<"CHALLENGED FAILED\r\n">>),
