@@ -16,10 +16,14 @@
 -define(DEFAULT_PORT, 6969).
 -define(DEFAULT_POSTS, "./posts/").
 -define(POST_ID_BYTE_SIZE, 32).
--define(POST_SIZE_LIMIT, 4*1024).
+-define(POST_BYTE_SIZE_LIMIT, 4*1024).
 -define(CHALLENGE_TIMEOUT, 60*1000).
+-define(CHALLENGE_BYTE_SIZE, 32).
 
+%% TODO: protocol versioning
 %% TODO: the server should respond with something on each submitted line
+%% TODO: limit the amount of connections from a single IP
+%% TODO: flexible challenge: server announces amount of zeros and the hash function
 
 -spec start() -> pid().
 start() ->
@@ -99,7 +103,7 @@ session({post, Content}, Sock, Addr, Posts) ->
                             %% Does the line overflow the post size limit?
                             PostSize = byte_size(Content) + byte_size(Line),
                             if
-                                PostSize >= ?POST_SIZE_LIMIT ->
+                                PostSize >= ?POST_BYTE_SIZE_LIMIT ->
                                     io:format("~w: ERROR: post is too big\n", [Addr]),
                                     gen_tcp:send(Sock, <<"TOO BIG\r\n">>),
                                     gen_tcp:close(Sock),
@@ -119,8 +123,7 @@ session({post, Content}, Sock, Addr, Posts) ->
             fail_session(Sock, Addr, Reason)
     end;
 session({challenge, Content}, Sock, Addr, Posts) ->
-    %% TODO: challenge should be probably encoded with base64 for better variety of characters
-    Challenge = binary:encode_hex(crypto:strong_rand_bytes(32)),
+    Challenge = base64:encode(crypto:strong_rand_bytes(?CHALLENGE_BYTE_SIZE)),
     gen_tcp:send(Sock, [<<"CHALLENGE ">>, Challenge, <<"\r\n">>]),
     io:format("~w: has been challenged with prefix ~ts\n", [Addr, Challenge]),
     session({accepted, Content, Challenge}, Sock, Addr, Posts);
@@ -234,7 +237,5 @@ accepter(LSock, Posts) ->
 %% CHALLENGE and ACCEPTED strings.
 
 %% TODO: HTTP compatibility? So you can GET from a browser
-%% TODO: protocol versioning
-%% TODO: flexible challenge
 
-%% TODO: limit the amount of connections from a single IP
+%% TODO: maybe post ids should be uuids?
