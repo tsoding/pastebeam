@@ -4,7 +4,6 @@
 %% TODO: customizable ?POSTS folder
 -define(POSTS, "./posts/").
 
-%% TODO: use prefix challenge instead of suffix
 %% TODO: protocol versioning
 %% TODO: limit the size of the uploaded file
 %% TODO: flexible challenge
@@ -73,22 +72,22 @@ session({challenge, Content}, Sock, Addr) ->
     session({accepted, Content, Challenge}, Sock, Addr);
 session({accepted, Content, Challenge}, Sock, Addr) ->
     case gen_tcp:recv(Sock, 0) of
-        {ok, <<"ACCEPTED ", Suffix/binary>>} ->
+        {ok, <<"ACCEPTED ", Prefix/binary>>} ->
             io:format("~w: accepted the challenge\n", [Addr]),
-            Blob = <<Content/binary,
+            Blob = <<Prefix/binary,
+                     Content/binary,
                      Challenge/binary,
-                     <<"\r\n">>/binary,
-                     Suffix/binary>>,
+                     <<"\r\n">>/binary>>,
             case binary:encode_hex(crypto:hash(sha256, Blob)) of
                 <<"00000", _/binary>> ->
                     Id = binary:encode_hex(crypto:strong_rand_bytes(32)),
-                    io:format("~w: completed the challenge: Id: ~w\n", [Addr, Id]),
+                    io:format("~w: completed the challenge: Id: ~ts\n", [Addr, Id]),
                     ok = file:write_file(<<?POSTS, Id/binary>>, Content),
                     gen_tcp:send(Sock, [<<"SENT ">>, Id, <<"\r\n">>]),
                     gen_tcp:close(Sock),
                     ok;
                 Hash ->
-                    io:format("~w: ERROR: failed the challenge: Hash: ~w\n", [Addr, Hash]),
+                    io:format("~w: ERROR: failed the challenge: Hash: ~ts\n", [Addr, Hash]),
                     gen_tcp:send(Sock, <<"CHALLENGED FAILED\r\n">>),
                     gen_tcp:close(Sock),
                     ok

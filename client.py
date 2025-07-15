@@ -21,16 +21,16 @@ challenge = client.recv(100).removeprefix(b'CHALLENGE ').strip().decode('utf-8')
 counter = 0
 limit = 50_000_000
 while counter < limit:
-    suffix = b64encode(randbytes(randint(3, 100)))
-    s = '\r\n'.join(content + [challenge, suffix.decode('utf-8'), ""])
+    prefix = b64encode(randbytes(randint(3, 100)))
+    s = '\r\n'.join([prefix.decode('utf-8')] + content + [challenge, ""])
     h = hashlib.sha256(str.encode(s)).hexdigest()
 
     c = 0
     while c < len(h) and h[c] == '0':
         c += 1
     if c >= 5:
-        print(f"suffix => {suffix}, hash = {h}, c = {c}")
-        client.send(b'ACCEPTED ' + suffix + b'\r\n')
+        print(f"prefix => {prefix}, hash = {h}, c = {c}")
+        client.send(b'ACCEPTED ' + prefix + b'\r\n')
         print(client.recv(100))
         break
 
