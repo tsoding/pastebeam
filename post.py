@@ -15,19 +15,14 @@ import sys
 
 RECV_SIZE = 1024
 POW_LIMIT = 50_000_000
-POW_LEADING_ZEROS = 5
 
 def check_response(client, expected: bytes):
     actual = client.recv(RECV_SIZE)
-    if expected != actual:
-        raise Exception(f"Server returned {actual!r} instead of {expected!r}")
-        exit(1)
+    assert expected == actual, f"Server returned {actual!r} instead of {expected!r}"
 
 def check_response_prefix(client, prefix: bytes) -> bytes:
     response = client.recv(RECV_SIZE)
-    if not response.startswith(prefix):
-        raise Exception(f"Server returned {response!r} instead of response with prefix {prefix!r}")
-        exit(1)
+    assert response.startswith(prefix), f"Server returned {response!r} instead of response with prefix {prefix!r}"
     return response.removeprefix(prefix)
 
 def usage(program_name: str):
@@ -74,26 +69,33 @@ if __name__ != '__main':
         check_response(client, b"OK\r\n")
 
     client.send(b'SUBMIT\r\n')
-    challenge = check_response_prefix(client, b'CHALLENGE ').strip().decode('utf-8')
-    print(f"{host}:{port}: server challenged us with suffix {challenge}")
+    response = check_response_prefix(client, b'CHALLENGE ').split()
+    hashfunc = response.pop(0);
+    assert hashfunc == b'sha256', f"Unknown hash function {hashfunc!r}"
+    leading_zeros = int(response.pop(0));
+    challenge = response.pop(0)
 
-    print(f"{host}:{port}: mining the solution with {POW_LEADING_ZEROS} leading zeros in sha256 with {POW_LIMIT} iterations max")
+    print(f"{host}:{port}: server challenged us with hash={hashfunc!r}, suffix={challenge!r}, zeros={leading_zeros!r}")
+
+    print(f"{host}:{port}: mining the solution with {leading_zeros} leading zeros in sha256 with {POW_LIMIT} iterations max")
 
     counter = 0
     while counter < POW_LIMIT:
         prefix = b64encode(randbytes(randint(3, 100)))
-        s = '\r\n'.join([prefix.decode('utf-8')] + content + [challenge, ""])
+        s = '\r\n'.join([prefix.decode('utf-8')] + content + [challenge.decode('utf-8'), ""])
         h = hashlib.sha256(str.encode(s)).hexdigest()
 
         c = 0
         while c < len(h) and h[c] == '0':
             c += 1
-        if c >= POW_LEADING_ZEROS:
-            print(f"{host}:{port}: found solution with prefix {prefix!r} and sha256 = {h!r}")
+        if c >= leading_zeros:
+            print(f"{host}:{port}: found prefix solution {prefix!r} and sha256 = {h!r}")
             client.send(b'ACCEPTED ' + prefix + b'\r\n')
             post_id = check_response_prefix(client, b'SENT ').strip().decode('utf-8')
 
             print(f"{host}:{port}: Post ID: {post_id}")
-            break
+            exit(0)
 
         counter += 1
+
+assert False, "Could not find the solution for the challenge..."

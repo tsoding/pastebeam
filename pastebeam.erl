@@ -19,9 +19,9 @@
 -define(POST_BYTE_SIZE_LIMIT, 4*1024).
 -define(CHALLENGE_TIMEOUT, 60*1000).
 -define(CHALLENGE_BYTE_SIZE, 32).
+-define(CHALLENGE_LEADING_ZEROS, 5).
 
 %% TODO: limit the amount of connections from a single IP
-%% TODO: flexible challenge: server announces amount of zeros and the hash function
 
 -spec start() -> pid().
 start() ->
@@ -125,7 +125,7 @@ session({post, Content}, Sock, Addr, Posts) ->
     end;
 session({challenge, Content}, Sock, Addr, Posts) ->
     Challenge = base64:encode(crypto:strong_rand_bytes(?CHALLENGE_BYTE_SIZE)),
-    gen_tcp:send(Sock, [<<"CHALLENGE ">>, Challenge, <<"\r\n">>]),
+    gen_tcp:send(Sock, io_lib:bformat(<<"CHALLENGE sha256 ~p ~ts\r\n">>, [?CHALLENGE_LEADING_ZEROS, Challenge])),
     io:format("~w: has been challenged with prefix ~ts\n", [Addr, Challenge]),
     session({accepted, Content, Challenge}, Sock, Addr, Posts);
 session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
@@ -137,8 +137,9 @@ session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
                      Challenge/binary,
                      <<"\r\n">>/binary>>,
             Hash = binary:encode_hex(crypto:hash(sha256, Blob)),
-            case Hash of
-                <<"00000", _/binary>> ->
+            LeadingZeros = count_leading_zeros(Hash),
+            if
+                LeadingZeros >= ?CHALLENGE_LEADING_ZEROS ->
                     io:format("~w: completed the challenge with hash: ~ts\n", [Addr, Hash]),
                     Id = random_valid_post_id(),
                     io:format("~w: assigned post id: ~ts\n", [Addr, Id]),
@@ -156,7 +157,7 @@ session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
                             gen_tcp:close(Sock),
                             ok
                     end;
-                _Hash ->
+                true ->
                     io:format("~w: ERROR: failed the challenge with hash: ~ts\n", [Addr, Hash]),
                     gen_tcp:send(Sock, <<"CHALLENGED FAILED\r\n">>),
                     gen_tcp:close(Sock),
@@ -214,6 +215,16 @@ random_valid_post_id() ->
 -spec is_hex_digit(X :: integer()) -> boolean().
 is_hex_digit(X) -> (($0 =< X) and (X =< $9)) or (($A =< X) and (X =< $F)).
 
+-spec count_leading_zeros_impl(Digest :: binary(), Acc :: integer()) -> integer().
+count_leading_zeros_impl(<<"0", Digest/binary>>, Acc) ->
+    count_leading_zeros_impl(Digest, Acc + 1);
+count_leading_zeros_impl(_Digest, Acc) ->
+    Acc.
+
+-spec count_leading_zeros(Digest :: binary()) -> integer().
+count_leading_zeros(Digest) ->
+    count_leading_zeros_impl(Digest, 0).
+
 -spec is_valid_post_id(Id) -> boolean() when
       Id :: binary().
 is_valid_post_id(Id) ->
@@ -234,11 +245,8 @@ accepter(LSock, Posts) ->
 %% - automatically closes sockets of the died session threads,
 %% - ...,
 
-%% TODO: delete the posts by requiring the user to provide the
-%% CHALLENGE and ACCEPTED strings.
+%% TODO: delete the posts by requiring the user to provide the CHALLENGE and ACCEPTED strings.
 
 %% TODO: maybe post ids should be uuids?
-
-%% TODO: protocol versioning
-
+%% TODO: Protocol versioning. The server may announce the version it supports in the "HI\r\n".
 %% TODO: some sort of heartbeat mechanism while the client is doing POW challenge
