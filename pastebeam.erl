@@ -20,8 +20,7 @@
 -define(CHALLENGE_TIMEOUT, 60*1000).
 -define(CHALLENGE_BYTE_SIZE, 32).
 
-%% TODO: protocol versioning
-%% TODO: the server should respond with something on each submitted line
+%% TODO: the server should respond with something on each submitted line, so the clients know that everything's OK
 %% TODO: limit the amount of connections from a single IP
 %% TODO: flexible challenge: server announces amount of zeros and the hash function
 
@@ -236,6 +235,6 @@ accepter(LSock, Posts) ->
 %% TODO: delete the posts by requiring the user to provide the
 %% CHALLENGE and ACCEPTED strings.
 
-%% TODO: HTTP compatibility? So you can GET from a browser
-
 %% TODO: maybe post ids should be uuids?
+
+%% TODO: protocol versioning
