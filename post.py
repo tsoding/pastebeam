@@ -63,6 +63,7 @@ if __name__ != '__main':
     client.send(b'POST\r\n')
     check_response(client, b"OK\r\n")
     print(f"{host}:{port}: server accepts POST")
+    print(f"{host}:{port}: uploading lines...")
 
     for line in content:
         client.send((line+'\r\n').encode())
