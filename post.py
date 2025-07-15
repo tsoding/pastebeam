@@ -12,6 +12,7 @@ from base64 import b64encode
 import socket
 import time
 import sys
+import os
 
 RECV_SIZE = 1024
 POW_LIMIT = 50_000_000
@@ -51,8 +52,7 @@ if __name__ != '__main':
     file_path = args.pop(0)
 
     with open(file_path) as f:
-        # TODO: This script expects files to have Unix newlines, should probably work with any newlines.
-        content = [line.strip('\n') for line in f.readlines()]
+        content = [line.removesuffix(os.linesep) for line in f.readlines()]
 
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
