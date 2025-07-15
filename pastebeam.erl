@@ -17,9 +17,9 @@
 -define(DEFAULT_POSTS, "./posts/").
 -define(POST_ID_BYTE_SIZE, 32).
 -define(POST_SIZE_LIMIT, 4*1024).
+-define(CHALLENGE_TIMEOUT, 60*1000).
 
 %% TODO: limit the allowed charset in the submitted documents
-%% TODO: challenge timeout
 
 -spec start() -> pid().
 start() ->
@@ -101,7 +101,7 @@ session({challenge, Content}, Sock, Addr, Posts) ->
     io:format("~w: has been challenged with prefix ~ts\n", [Addr, Challenge]),
     session({accepted, Content, Challenge}, Sock, Addr, Posts);
 session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
-    case gen_tcp:recv(Sock, 0) of
+    case gen_tcp:recv(Sock, 0, ?CHALLENGE_TIMEOUT) of
         {ok, <<"ACCEPTED ", Prefix/binary>>} ->
             io:format("~w: accepted the challenge\n", [Addr]),
             Blob = <<Prefix/binary,
@@ -129,6 +129,11 @@ session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
         {ok, _} ->
             io:format("~w: ERROR: failed the challenge: Invalid Command\n", [Addr]),
             gen_tcp:send(Sock, <<"INVALID COMMAND\r\n">>),
+            gen_tcp:close(Sock),
+            ok;
+        {error, timeout} ->
+            io:format("~w: ERROR: failed the challenge: Timeout\n", [Addr]),
+            gen_tcp:send(Sock, <<"TOO SLOW\r\n">>),
             gen_tcp:close(Sock),
             ok;
         {error, Reason} ->
@@ -199,3 +204,5 @@ accepter(LSock, Posts) ->
 %% TODO: HTTP compatibility? So you can GET from a browser
 %% TODO: protocol versioning
 %% TODO: flexible challenge
+
+%% TODO: limit the amount of connections from a single IP
