@@ -19,8 +19,6 @@
 -define(POST_SIZE_LIMIT, 4*1024).
 -define(CHALLENGE_TIMEOUT, 60*1000).
 
-%% TODO: limit the allowed charset in the submitted documents
-
 -spec start() -> pid().
 start() ->
     start(?DEFAULT_PORT, ?DEFAULT_POSTS).
@@ -64,7 +62,7 @@ session(command, Sock, Addr, Posts) ->
             io:format("~w: wants to make a post\n", [Addr]),
             session({post, <<"">>}, Sock, Addr, Posts);
         {ok, <<"GET ", Id/binary>>} ->
-            io:format("~w: wants to get a post by id ~w\n", [Addr, Id]),
+            io:format("~w: wants to get a post\n", [Addr]),
             session({get, string:trim(Id)}, Sock, Addr, Posts);
         {ok, Command} ->
             io:format("~w: ERROR: invalid command: ~w\n", [Addr, Command]),
@@ -81,15 +79,28 @@ session({post, Content}, Sock, Addr, Posts) ->
             session({challenge, Content}, Sock, Addr, Posts);
         %% TODO: we should explicitly require submitted lines to end with '\r\n'
         {ok, Line} ->
-            PostSize = byte_size(Content) + byte_size(Line),
-            if
-                PostSize >= ?POST_SIZE_LIMIT ->
-                    io:format("~w: ERROR: post is too big\n", [Addr]),
-                    gen_tcp:send(Sock, <<"TOO BIG\r\n">>),
+            case unicode:characters_to_list(Line, utf8) of
+                {error, _, _}  ->
+                    io:format("~w: ERROR: invalid utf8\n", [Addr]),
+                    gen_tcp:send(Sock, <<"INVALID UTF8\r\n">>),
                     gen_tcp:close(Sock),
                     ok;
-                true ->
-                    session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts)
+                {incomplete, _, _} ->
+                    io:format("~w: ERROR: incomplete utf8\n", [Addr]),
+                    gen_tcp:send(Sock, <<"INVALID UTF8\r\n">>), % For the user it's all invalid utf8, no distinction
+                    gen_tcp:close(Sock),
+                    ok;
+                _Line ->
+                    PostSize = byte_size(Content) + byte_size(Line),
+                    if
+                        PostSize >= ?POST_SIZE_LIMIT ->
+                            io:format("~w: ERROR: post is too big\n", [Addr]),
+                            gen_tcp:send(Sock, <<"TOO BIG\r\n">>),
+                            gen_tcp:close(Sock),
+                            ok;
+                        true ->
+                            session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts)
+                    end
             end;
         {error, Reason} ->
             fail_session(Sock, Addr, Reason)
