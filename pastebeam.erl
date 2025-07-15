@@ -19,6 +19,8 @@
 -define(POST_SIZE_LIMIT, 4*1024).
 -define(CHALLENGE_TIMEOUT, 60*1000).
 
+%% TODO: the server should respond with something on each submitted line
+
 -spec start() -> pid().
 start() ->
     start(?DEFAULT_PORT, ?DEFAULT_POSTS).
@@ -77,8 +79,8 @@ session({post, Content}, Sock, Addr, Posts) ->
         {ok, <<"SUBMIT\r\n">>} ->
             io:format("~w: submitted the post of size ~w bytes\n", [Addr, byte_size(Content)]),
             session({challenge, Content}, Sock, Addr, Posts);
-        %% TODO: we should explicitly require submitted lines to end with '\r\n'
         {ok, Line} ->
+            %% Is line a valid UTF-8?
             case unicode:characters_to_list(Line, utf8) of
                 {error, _, _}  ->
                     io:format("~w: ERROR: invalid utf8\n", [Addr]),
@@ -91,15 +93,26 @@ session({post, Content}, Sock, Addr, Posts) ->
                     gen_tcp:close(Sock),
                     ok;
                 _Line ->
-                    PostSize = byte_size(Content) + byte_size(Line),
-                    if
-                        PostSize >= ?POST_SIZE_LIMIT ->
-                            io:format("~w: ERROR: post is too big\n", [Addr]),
-                            gen_tcp:send(Sock, <<"TOO BIG\r\n">>),
+                    %% Does the line end with \r\n?
+                    case binary:longest_common_suffix([Line, <<"\r\n">>]) of
+                        2 ->
+                            %% Does the line overflow the post size limit?
+                            PostSize = byte_size(Content) + byte_size(Line),
+                            if
+                                PostSize >= ?POST_SIZE_LIMIT ->
+                                    io:format("~w: ERROR: post is too big\n", [Addr]),
+                                    gen_tcp:send(Sock, <<"TOO BIG\r\n">>),
+                                    gen_tcp:close(Sock),
+                                    ok;
+                                true ->
+                                    %% All good, adding the line
+                                    session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts)
+                            end;
+                        _ ->
+                            io:format("~w: ERROR: bad line ending\n", [Addr]),
+                            gen_tcp:send(Sock, <<"BAD LINE ENDING\r\n">>),
                             gen_tcp:close(Sock),
-                            ok;
-                        true ->
-                            session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts)
+                            ok
                     end
             end;
         {error, Reason} ->
