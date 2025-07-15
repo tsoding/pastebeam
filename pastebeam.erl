@@ -20,7 +20,6 @@
 -define(CHALLENGE_TIMEOUT, 60*1000).
 -define(CHALLENGE_BYTE_SIZE, 32).
 
-%% TODO: the server should respond with something on each submitted line, so the clients know that everything's OK
 %% TODO: limit the amount of connections from a single IP
 %% TODO: flexible challenge: server announces amount of zeros and the hash function
 
@@ -61,9 +60,11 @@ fail_session(Sock, Addr, Reason) ->
       Addr  :: addr(),
       Posts :: file:name_all().
 session(command, Sock, Addr, Posts) ->
+    gen_tcp:send(Sock, <<"HI\r\n">>),
     io:format("~w: connected\n", [Addr]),
     case gen_tcp:recv(Sock, 0) of
         {ok, <<"POST\r\n">>} ->
+            gen_tcp:send(Sock, <<"OK\r\n">>),
             io:format("~w: wants to make a post\n", [Addr]),
             session({post, <<"">>}, Sock, Addr, Posts);
         {ok, <<"GET ", Id/binary>>} ->
@@ -109,6 +110,7 @@ session({post, Content}, Sock, Addr, Posts) ->
                                     ok;
                                 true ->
                                     %% All good, adding the line
+                                    gen_tcp:send(Sock, <<"OK\r\n">>),
                                     session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts)
                             end;
                         _ ->
@@ -200,7 +202,7 @@ session({get, Id}, Sock, Addr, Posts) ->
         false ->
             %% Id is invalid post ID submitted by user! Always log such things with ~w!
             io:format("~w: ERROR: invalid Post ID: ~w\n", [Addr, Id]),
-            gen_tcp:send(Sock, <<"404\r\n">>),
+            gen_tcp:send(Sock, <<"404\r\n">>), %% Do not let the user know that the id is invalid. It's all "not found" for them.
             gen_tcp:close(Sock),
             ok
     end.
@@ -238,3 +240,5 @@ accepter(LSock, Posts) ->
 %% TODO: maybe post ids should be uuids?
 
 %% TODO: protocol versioning
+
+%% TODO: some sort of heartbeat mechanism while the client is doing POW challenge

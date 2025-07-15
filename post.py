@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # Reference Client implementation for POSTing via the PasteBEAM Protocol
+#
+# This script doesn't chunk the TCP stream by newlines like Erlang so
+# it may not work correctly. It's presented to convey the idea of the
+# protocol.
 import hashlib;
 from random import randint, randbytes
 from base64 import b64encode
@@ -9,42 +13,73 @@ import sys
 
 # TODO: accept address and port via command line
 
-args = sys.argv
-program_name = args.pop(0)
+RECV_SIZE = 1024
+POW_LIMIT = 50_000_000
+POW_LEADING_ZEROS = 5
 
-if len(args) == 0:
-    print(f"Usage: {program_name} <file-path>")
-    print(f"ERROR: no file-path is provided")
-    exit(1)
+def check_response(client, expected: bytes):
+    actual = client.recv(RECV_SIZE)
+    if expected != actual:
+        raise Exception(f"Server returned {actual!r} instead of {expected!r}")
+        exit(1)
 
-file_path = args.pop(0)
+def check_response_prefix(client, prefix: bytes) -> bytes:
+    response = client.recv(RECV_SIZE)
+    if not response.startswith(prefix):
+        raise Exception(f"Server returned {response!r} instead of response with prefix {prefix!r}")
+        exit(1)
+    return response.removeprefix(prefix)
 
-with open(file_path) as f:
-    content = [line.strip('\n') for line in f.readlines()]
+if __name__ != '__main':
+    args = sys.argv
+    program_name = args.pop(0)
 
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect(('localhost', 6969))
-client.send(b'POST\r\n')
-for line in content:
-    client.send((line+'\r\n').encode())
-client.send(b'SUBMIT\r\n')
+    if len(args) == 0:
+        print(f"Usage: {program_name} <file-path>")
+        print(f"ERROR: no file-path is provided")
+        exit(1)
 
-challenge = client.recv(100).removeprefix(b'CHALLENGE ').strip().decode('utf-8')
+    file_path = args.pop(0)
 
-counter = 0
-limit = 50_000_000
-while counter < limit:
-    prefix = b64encode(randbytes(randint(3, 100)))
-    s = '\r\n'.join([prefix.decode('utf-8')] + content + [challenge, ""])
-    h = hashlib.sha256(str.encode(s)).hexdigest()
+    with open(file_path) as f:
+        # TODO: This script expects files to have Unix newlines, should probably work with any newlines.
+        content = [line.strip('\n') for line in f.readlines()]
 
-    c = 0
-    while c < len(h) and h[c] == '0':
-        c += 1
-    if c >= 5:
-        print(f"prefix => {prefix}, hash = {h}, c = {c}")
-        client.send(b'ACCEPTED ' + prefix + b'\r\n')
-        print(client.recv(100))
-        break
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    counter += 1
+    client.connect(('localhost', 6969))
+    check_response(client, b"HI\r\n")
+    print("OK: looks like PasteBEAM server")
+
+    client.send(b'POST\r\n')
+    check_response(client, b"OK\r\n")
+    print("OK: server accepts POST")
+
+    for line in content:
+        client.send((line+'\r\n').encode())
+        check_response(client, b"OK\r\n")
+
+    client.send(b'SUBMIT\r\n')
+    challenge = check_response_prefix(client, b'CHALLENGE ').strip().decode('utf-8')
+    print(f"OK: server challenged us with suffix {challenge}")
+
+    print(f"OK: mining the solution with {POW_LEADING_ZEROS} leading zeros in sha256 with {POW_LIMIT} iterations max")
+
+    counter = 0
+    while counter < POW_LIMIT:
+        prefix = b64encode(randbytes(randint(3, 100)))
+        s = '\r\n'.join([prefix.decode('utf-8')] + content + [challenge, ""])
+        h = hashlib.sha256(str.encode(s)).hexdigest()
+
+        c = 0
+        while c < len(h) and h[c] == '0':
+            c += 1
+        if c >= POW_LEADING_ZEROS:
+            print(f"OK: found solution with prefix {prefix!r} and sha256 = {h!r}")
+            client.send(b'ACCEPTED ' + prefix + b'\r\n')
+            post_id = check_response_prefix(client, b'SENT ').strip().decode('utf-8')
+
+            print(f"OK: Post ID: {post_id}")
+            break
+
+        counter += 1
