@@ -1,6 +1,9 @@
 -module(pastebeam).
 -export([start/1, accepter/1, session/3]).
 
+%% TODO: customizable ?POSTS folder
+-define(POSTS, "./posts/").
+
 %% TODO: use prefix challenge instead of suffix
 %% TODO: protocol versioning
 %% TODO: limit the size of the uploaded file
@@ -14,6 +17,7 @@
 -spec start(Port) -> pid() when
       Port :: inet:port_number().
 start(Port) ->
+    ok = filelib:ensure_dir(?POSTS),
     Options = [binary, {packet, line}, {active, false}, {reuseaddr, true}],
     {ok, LSock} = gen_tcp:listen(Port, Options),
     spawn(?MODULE, accepter, [LSock]).
@@ -79,9 +83,7 @@ session({accepted, Content, Challenge}, Sock, Addr) ->
                 <<"00000", _/binary>> ->
                     Id = binary:encode_hex(crypto:strong_rand_bytes(32)),
                     io:format("~w: completed the challenge: Id: ~w\n", [Addr, Id]),
-                    %% TODO: create the ./posts/ folder if does not exists
-                    %% TODO: customizable ./posts/ folder
-                    ok = file:write_file(<<"./posts/", Id/binary>>, Content),
+                    ok = file:write_file(<<?POSTS, Id/binary>>, Content),
                     gen_tcp:send(Sock, [<<"SENT ">>, Id, <<"\r\n">>]),
                     gen_tcp:close(Sock),
                     ok;
