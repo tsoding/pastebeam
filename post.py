@@ -13,6 +13,7 @@ import socket
 import time
 import sys
 import os
+import math
 
 RECV_SIZE = 1024
 POW_LIMIT = 50_000_000
@@ -63,11 +64,14 @@ if __name__ != '__main':
     client.send(b'POST\r\n')
     check_response(client, b"OK\r\n")
     print(f"{host}:{port}: server accepts POST")
-    print(f"{host}:{port}: uploading lines...")
 
-    for line in content:
+    bar_len = 30
+    for (index, line) in enumerate(content):
+        p = index/len(content)
+        print('\ruploading lines: ' + '#'*math.floor(p*bar_len) + '.'*math.ceil((1 - p)*bar_len), end='')
         client.send((line+'\r\n').encode())
         check_response(client, b"OK\r\n")
+    print('\ruploading lines: ' + '#'*bar_len)
 
     client.send(b'SUBMIT\r\n')
     response = check_response_prefix(client, b'CHALLENGE ').split()
@@ -81,7 +85,12 @@ if __name__ != '__main':
     print(f"{host}:{port}: mining the solution with {leading_zeros} leading zeros in sha256 with {POW_LIMIT} iterations max")
 
     counter = 0
+    spinner_period = 10000
+    spinner = "-\\|/"
     while counter < POW_LIMIT:
+        if counter%spinner_period == 0:
+            print('\rSolving Challenge: '+spinner[counter//spinner_period%len(spinner)], end='')
+
         prefix = b64encode(randbytes(randint(3, 100)))
         s = '\r\n'.join([prefix.decode('utf-8')] + content + [challenge.decode('utf-8'), ""])
         h = hashlib.sha256(str.encode(s)).hexdigest()
@@ -90,6 +99,7 @@ if __name__ != '__main':
         while c < len(h) and h[c] == '0':
             c += 1
         if c >= leading_zeros:
+            print() # break spinner
             print(f"{host}:{port}: found prefix solution {prefix!r} and sha256 = {h!r}")
             client.send(b'ACCEPTED ' + prefix + b'\r\n')
             post_id = check_response_prefix(client, b'SENT ').strip().decode('utf-8')
@@ -99,4 +109,5 @@ if __name__ != '__main':
 
         counter += 1
 
+print() # break spinner
 assert False, "Could not find the solution for the challenge..."
