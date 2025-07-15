@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Reference Client implementation for the PasteBeam Protocol
+# Reference Client implementation for POSTing via the PasteBEAM Protocol
 import hashlib;
 from random import randint, randbytes
 from base64 import b64encode

@@ -1,17 +1,23 @@
+%% # Logging Notes
+%%
+%% We are currently logging with just io:format for the sake of
+%% simplicity.
+%%
+%% Potentially dangerous data for ANSI Terminals should be formatted
+%% with ~w. Safe human readable strings should be probably formatted
+%% with ~ts.
 -module(pastebeam).
--export([start/0, start/2, accepter/2, session/4]).
+-export([start/0, start/2]).
 
 -define(DEFAULT_PORT, 6969).
 -define(DEFAULT_POSTS, "./posts/").
+-define(POST_ID_BYTE_SIZE, 32).
 
 %% TODO: protocol versioning
 %% TODO: limit the size of the uploaded file
 %% TODO: flexible challenge
 %% TODO: limit the allowed charset in the submitted documents
 %% TODO: challenge timeout
-
--type addr() :: {inet:ip_address(), inet:port_number()} |
-                inet:returned_non_ip_address().
 
 -spec start() -> pid().
 start() ->
@@ -26,10 +32,13 @@ start(Port, Posts) ->
     {ok, LSock} = gen_tcp:listen(Port, Options),
     spawn(fun () -> accepter(LSock, Posts) end).
 
+-type addr() :: {inet:ip_address(), inet:port_number()} |
+                inet:returned_non_ip_address().
+
 -spec fail_session(Sock, Addr, Reason) -> ok when
-      Addr :: addr,
+      Addr :: addr(),
       Sock :: gen_tcp:socket(),
-      Reason :: term().
+      Reason :: any().
 fail_session(Sock, Addr, Reason) ->
     io:format("~w: ERROR: session failed: ~w\n", [Addr, Reason]),
     gen_tcp:close(Sock),
@@ -66,7 +75,7 @@ session(command, Sock, Addr, Posts) ->
 session({post, Content}, Sock, Addr, Posts) ->
     case gen_tcp:recv(Sock, 0) of
         {ok, <<"SUBMIT\r\n">>} ->
-            io:format("~w: submitted the post of the ~p bytes\n", [Addr, byte_size(Content)]),
+            io:format("~w: submitted the post of size ~w bytes\n", [Addr, byte_size(Content)]),
             session({challenge, Content}, Sock, Addr, Posts);
         {ok, Line} ->
             session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts);
@@ -74,9 +83,10 @@ session({post, Content}, Sock, Addr, Posts) ->
             fail_session(Sock, Addr, Reason)
     end;
 session({challenge, Content}, Sock, Addr, Posts) ->
+    %% TODO: challenge should be probably encoded with base64 for better variety of characters
     Challenge = binary:encode_hex(crypto:strong_rand_bytes(32)),
     gen_tcp:send(Sock, [<<"CHALLENGE ">>, Challenge, <<"\r\n">>]),
-    io:format("~w: has been challenged\n", [Addr]),
+    io:format("~w: has been challenged with prefix ~ts\n", [Addr, Challenge]),
     session({accepted, Content, Challenge}, Sock, Addr, Posts);
 session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
     case gen_tcp:recv(Sock, 0) of
@@ -86,33 +96,76 @@ session({accepted, Content, Challenge}, Sock, Addr, Posts) ->
                      Content/binary,
                      Challenge/binary,
                      <<"\r\n">>/binary>>,
-            case binary:encode_hex(crypto:hash(sha256, Blob)) of
+            Hash = binary:encode_hex(crypto:hash(sha256, Blob)),
+            case Hash of
                 <<"00000", _/binary>> ->
-                    Id = binary:encode_hex(crypto:strong_rand_bytes(32)),
-                    io:format("~w: completed the challenge: Id: ~ts\n", [Addr, Id]),
+                    io:format("~w: completed the challenge with hash: ~ts\n", [Addr, Hash]),
+                    Id = random_valid_post_id(),
+                    io:format("~w: assigned post id: ~ts\n", [Addr, Id]),
                     PostPath = io_lib:format("~ts/~ts", [Posts, Id]),
+                    %% TODO: fail if the file already exists
                     ok = file:write_file(PostPath, Content),
                     gen_tcp:send(Sock, [<<"SENT ">>, Id, <<"\r\n">>]),
                     gen_tcp:close(Sock),
                     ok;
-                Hash ->
-                    io:format("~w: ERROR: failed the challenge: Hash: ~ts\n", [Addr, Hash]),
+                _Hash ->
+                    io:format("~w: ERROR: failed the challenge with hash: ~ts\n", [Addr, Hash]),
                     gen_tcp:send(Sock, <<"CHALLENGED FAILED\r\n">>),
                     gen_tcp:close(Sock),
                     ok
             end;
         {ok, _} ->
             io:format("~w: ERROR: failed the challenge: Invalid Command\n", [Addr]),
-            gen_tcp:send(Sock, "INVALID COMMAND\r\n"),
+            gen_tcp:send(Sock, <<"INVALID COMMAND\r\n">>),
             gen_tcp:close(Sock),
             ok;
         {error, Reason} ->
             fail_session(Sock, Addr, Reason)
     end;
-session({get, Id}, Sock, Addr, _Posts) ->
-    io:format("~w: TODO: GET ~w\n", [Addr, Id]),
-    gen_tcp:close(Sock),
-    ok.
+session({get, Id}, Sock, Addr, Posts) ->
+    case is_valid_post_id(Id) of
+        true ->
+            %% PostPath is safe to log with ~ts since it's made out of
+            %% Posts which we trust and Id which is verified with
+            %% is_valid_post_id/1.
+            PostPath = io_lib:format("~ts/~ts", [Posts, Id]),
+            case file:read_file(PostPath) of
+                {ok, Binary} ->
+                    io:format("~w: sending out post ~ts\n", [Addr, PostPath]),
+                    gen_tcp:send(Sock, Binary),
+                    gen_tcp:close(Sock),
+                    ok;
+                {error, enoent} ->
+                    io:format("~w: ERROR: could not read post file ~ts: doesn't exists\n", [Addr, PostPath]),
+                    gen_tcp:send(Sock, <<"404\r\n">>),
+                    gen_tcp:close(Sock),
+                    ok;
+                {error, Reason} ->
+                    io:format("~w: ERROR: could not read post file ~ts: ~w\n", [Addr, PostPath, Reason]),
+                    gen_tcp:send(Sock, <<"500\r\n">>),
+                    gen_tcp:close(Sock),
+                    ok
+            end;
+        false ->
+            %% Id is invalid post ID submitted by user! Always log such things with ~w!
+            io:format("~w: ERROR: invalid Post ID: ~w\n", [Addr, Id]),
+            gen_tcp:send(Sock, <<"404\r\n">>),
+            gen_tcp:close(Sock),
+            ok
+    end.
+
+-spec random_valid_post_id() -> binary().
+random_valid_post_id() ->
+    binary:encode_hex(crypto:strong_rand_bytes(?POST_ID_BYTE_SIZE)).
+
+-spec is_hex_digit(X :: integer()) -> boolean().
+is_hex_digit(X) -> (($0 =< X) and (X =< $9)) or (($A =< X) and (X =< $F)).
+
+-spec is_valid_post_id(Id) -> boolean() when
+      Id :: binary().
+is_valid_post_id(Id) ->
+    IdList = binary_to_list(Id),
+    (length(IdList) == ?POST_ID_BYTE_SIZE*2) and lists:all(fun is_hex_digit/1, IdList).
 
 -spec accepter(LSock, Posts) -> no_return() when
       LSock :: gen_tcp:socket(),
@@ -122,3 +175,11 @@ accepter(LSock, Posts) ->
     {ok, Addr} = inet:peername(Sock),
     spawn(fun () -> session(command, Sock, Addr, Posts) end),
     accepter(LSock, Posts).
+
+%% TODO: supervisor thread that enables
+%% - to change Posts (and possible other parameters) at runtime,
+%% - automatically closes sockets of the died session threads,
+%% - ...,
+
+%% TODO: delete the posts by requiring the user to provide the
+%% CHALLENGE and ACCEPTED strings.
