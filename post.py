@@ -5,8 +5,21 @@ from random import randint, randbytes
 from base64 import b64encode
 import socket
 import time
+import sys
 
-with open("bee-movie-script.txt") as f:
+# TODO: accept address and port via command line
+
+args = sys.argv
+program_name = args.pop(0)
+
+if len(args) == 0:
+    print(f"Usage: {program_name} <file-path>")
+    print(f"ERROR: no file-path is provided")
+    exit(1)
+
+file_path = args.pop(0)
+
+with open(file_path) as f:
     content = [line.strip('\n') for line in f.readlines()]
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

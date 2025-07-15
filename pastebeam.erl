@@ -1,4 +1,8 @@
-%% # Logging Notes
+%% # PasteBEAM Service
+%%
+%% Reference implementation.
+%%
+%% ## Logging Notes
 %%
 %% We are currently logging with just io:format for the sake of
 %% simplicity.
@@ -12,10 +16,8 @@
 -define(DEFAULT_PORT, 6969).
 -define(DEFAULT_POSTS, "./posts/").
 -define(POST_ID_BYTE_SIZE, 32).
+-define(POST_SIZE_LIMIT, 4*1024).
 
-%% TODO: protocol versioning
-%% TODO: limit the size of the uploaded file
-%% TODO: flexible challenge
 %% TODO: limit the allowed charset in the submitted documents
 %% TODO: challenge timeout
 
@@ -77,8 +79,18 @@ session({post, Content}, Sock, Addr, Posts) ->
         {ok, <<"SUBMIT\r\n">>} ->
             io:format("~w: submitted the post of size ~w bytes\n", [Addr, byte_size(Content)]),
             session({challenge, Content}, Sock, Addr, Posts);
+        %% TODO: we should explicitly require submitted lines to end with '\r\n'
         {ok, Line} ->
-            session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts);
+            PostSize = byte_size(Content) + byte_size(Line),
+            if
+                PostSize >= ?POST_SIZE_LIMIT ->
+                    io:format("~w: ERROR: post is too big\n", [Addr]),
+                    gen_tcp:send(Sock, <<"TOO BIG\r\n">>),
+                    gen_tcp:close(Sock),
+                    ok;
+                true ->
+                    session({post, <<Content/binary, Line/binary>>}, Sock, Addr, Posts)
+            end;
         {error, Reason} ->
             fail_session(Sock, Addr, Reason)
     end;
@@ -183,3 +195,7 @@ accepter(LSock, Posts) ->
 
 %% TODO: delete the posts by requiring the user to provide the
 %% CHALLENGE and ACCEPTED strings.
+
+%% TODO: HTTP compatibility? So you can GET from a browser
+%% TODO: protocol versioning
+%% TODO: flexible challenge
