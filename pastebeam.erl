@@ -271,3 +271,6 @@ accepter(LSock, Server) ->
 %% TODO: Maybe post ids should be uuids?
 %% TODO: Some sort of heartbeat mechanism while the client is doing POW challenge.
 %% TODO: Should we support TLS connections?
+%% TODO: server process should support hot reloading itself by a message
+%%   https://stackoverflow.com/a/11971978
+%% TODO: dynamically increase the challenge as the load increases
