@@ -1,5 +1,8 @@
 # PasteBEAM
 
+> [!WARNING]
+> The protocol is not fully finalized yet, so anything can be changed at any moment. For the latest info on how the protocol works always consult this repos code.
+
 TCP-only pastebin-like service with Proof-of-Work.
 
 ## Quick Start
