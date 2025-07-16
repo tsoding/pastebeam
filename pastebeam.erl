@@ -45,20 +45,25 @@ start(Port, PostsRoot) ->
 server(PostsRoot, Connections, Limits) ->
     receive
         {connected, Sock} ->
-            {ok, Addr} = inet:peername(Sock),
-            {IP, _Port} = Addr,
-            Limit = maps:get(IP, Limits, 0) + 1,
-            if
-                Limit > ?MAX_LIMIT_PER_IP ->
-                    io:format("~p: ERROR: too many connections\n", [Addr]),
-                    gen_tcp:send(Sock, <<"TOO MANY CONNECTIONS\r\n">>),
-                    gen_tcp:close(Sock),
-                    server(PostsRoot, Connections, Limits);
-                true ->
-                    NewLimits = maps:put(IP, Limit, Limits),
-                    {Pid, _Ref} = spawn_monitor(fun () -> session(command, Sock, Addr, PostsRoot) end),
-                    NewConnections = maps:put(Pid, {Sock, Addr}, Connections),
-                    server(PostsRoot, NewConnections, NewLimits)
+            case inet:peername(Sock) of
+                {ok, Addr} ->
+                    {IP, _Port} = Addr,
+                    Limit = maps:get(IP, Limits, 0) + 1,
+                    if
+                        Limit > ?MAX_LIMIT_PER_IP ->
+                            io:format("~p: ERROR: too many connections\n", [Addr]),
+                            gen_tcp:send(Sock, <<"TOO MANY CONNECTIONS\r\n">>),
+                            gen_tcp:close(Sock),
+                            server(PostsRoot, Connections, Limits);
+                        true ->
+                            NewLimits = maps:put(IP, Limit, Limits),
+                            {Pid, _Ref} = spawn_monitor(fun () -> session(command, Sock, Addr, PostsRoot) end),
+                            NewConnections = maps:put(Pid, {Sock, Addr}, Connections),
+                            server(PostsRoot, NewConnections, NewLimits)
+                    end;
+                {error, Posix} ->
+                    io:format("ERROR: could not get a remote address of a connection: ~p\n", [Posix]),
+                    server(PostsRoot, Connections, Limits)
             end;
         {'DOWN', _Ref, process, Pid, Reason} ->
             case maps:get(Pid, Connections, undefined) of
