@@ -169,16 +169,13 @@ session(command, Params) ->
         {ok, <<"CRASH\r\n">>} ->
             throw(crash);
         {ok, <<"PARAMS\r\n">>} ->
-            gen_tcp:send(Sock, io_lib:bformat(<<"CHALLENGE_LEADING_ZEROS ~p\r\n",
-                                                "CHALLENGE_TIMEOUT_MS    ~p\r\n",
-                                                "CHALLENGE_BYTE_SIZE     ~p\r\n",
-                                                "MAX_LIMIT_PER_IP        ~p\r\n",
-                                                "POST_BYTE_SIZE_LIMIT    ~p\r\n">>,
-                                              [PublicParams#public_params.challenge_leading_zeros,
-                                               PublicParams#public_params.challenge_timeout_ms,
-                                               PublicParams#public_params.challenge_byte_size,
-                                               PublicParams#public_params.max_limit_per_ip,
-                                               PublicParams#public_params.post_byte_size_limit])),
+            PublicParamsValues = lists:nthtail(1, tuple_to_list(PublicParams)),
+            PublicParamsPropList = lists:zip(record_info(fields, public_params), PublicParamsValues),
+            lists:foreach(
+              fun ({Key, Value}) ->
+                      gen_tcp:send(Sock, io_lib:bformat(<<"~p ~p\r\n">>, [Key, Value]))
+              end,
+              PublicParamsPropList),
             ok;
         {ok, <<"POST\r\n">>} ->
             gen_tcp:send(Sock, <<"OK\r\n">>),
