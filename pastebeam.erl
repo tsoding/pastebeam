@@ -11,7 +11,7 @@
 %% with ~p. Safe human readable strings should be probably formatted
 %% with ~ts.
 -module(pastebeam).
--export([start/0, start/3, default_public_params/0]).
+-export([start/0, start/1, start/3, default_public_params/0]).
 
 -define(DEFAULT_PORT, 6969).
 -define(DEFAULT_POSTS_ROOT, "./posts/").
@@ -40,6 +40,11 @@ default_public_params() ->
 -spec start() -> pid().
 start() ->
     start(?DEFAULT_PORT, ?DEFAULT_POSTS_ROOT, default_public_params()).
+
+-spec start(Port) -> pid() when
+      Port         :: inet:port_number().
+start(Port) ->
+    start(Port, ?DEFAULT_POSTS_ROOT, default_public_params()).
 
 -spec start(Port, PostsRoot, PublicParams) -> pid() when
       Port         :: inet:port_number(),
